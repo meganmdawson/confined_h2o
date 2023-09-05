@@ -8,11 +8,13 @@ class WaterSystem():
     def __init__(self, T, dt):
         """ initialize initial variables and update parameters: """
         # universal constants
-        kB = 1.380649e-23 # J/K
-        N_A = 6.02214e23 # mol^-1
-        invN_A = 1/N_A
-        DaToKg = invN_A * 1e-3 # g/mol to kg
-        self.h_bar = 1.054571817e-34 # Js
+        kB = 3.166811563e-6 # J/K
+        DaToMe = 1822.89 # Da to electron mass (me/Da)
+        toHartree = 1.5936254980079682e-3 # convert kcal/mol to hartree
+        toBohr = 1.8903591682419658 # convert to bohr (bohr/Å)
+        toTime = 41.35649296939619 # fs to A.U. time (A.U.t/fs)
+
+        self.h_bar = 1 # atomic units
 
         # set up forces and potentials
         # NOTE: assumed that there is no 1/2 coefficient on the potentials
@@ -34,31 +36,33 @@ class WaterSystem():
         cH = 0.417
         cC = 0
 
-        self.lOH = 0.9419 # quartic bond length for OH bonds, Å
-        self.alpha_r = 2.287 # quartic bond distance for OH bonds, # 1/Å
-        self.D_r = 485.72056 * invN_A # quartic bond force for OH bonds, 
-                                # kJ
+        self.lOH = 0.9419 * toBohr # quartic bond length for OH bonds, Å -> bohr
+        self.alpha_r = 2.287 / toBohr # quartic bond distance for OH bonds, 
+                                      # 1/Å -> 1/bohr
+        self.D_r = 485.72056 * toHartree # quartic bond force for OH bonds, 
+                                              # kJ/mol -> hartree
 
-        self.kOH_aharm = 367.5644 * invN_A # harmonic bending force for HOH bond, 
-                                      # kcal/(mol*rad^2) * mol -> kN*m/(rad^2)
+        self.kOH_aharm = 367.5644 * toHartree # harmonic bending force for
+                                                    # HOH bond, kcal/(mol*rad^2) 
+                                                    # -> hartree/(rad^2)
         self.angOH_aharm = 1.8744836166419099 # harmonic bending angle for HOH bond (rad)
 
         # NOTE: double check the units for all params and make sure they are consistent
         # C-OH interaction for H2O@C60 -- Double check force params! 
-        self.ljCH_sigma = 2.64 # Å
-        self.ljCH_eps = 0.1071104 * invN_A # 0.0256 kJ/mol -> kJ
+        self.ljCH_sigma = 2.64 * toBohr # Å -> bohr
+        self.ljCH_eps = 0.0256 * toHartree # 0.0256 kJ/mol -> Hartree
 
-        self.ljCO_sigma = 3.372 # Å
-        self.ljCO_eps = 0.4347176 * invN_A # 0.1039 kcal/mol
+        self.ljCO_sigma = 3.372 * toBohr # Å -> bohr
+        self.ljCO_eps = 0.1039 * toHartree # 0.1039 kcal/mol -> hartree
 
         # create lists containing the force parameters to make indexing easier
-        self.ms = (np.array([mO, mH, mH]) * DaToKg).reshape(1, 3, 1) # convert masses to kg from Da 
-        self.cs = np.array([cO, cH, cH])
+        self.ms = (np.array([mO, mH, mH]) * DaToMe).reshape(1, 3, 1) # convert masses to m_e from Da 
+        self.cs = np.array([cO, cH, cH]) # NOTE: this should be converted to electronic charge?
 
         # load positions of atoms in water (Å)
         # shape: (3, 3); (O: x, y, z; H1: x, y, z; H2: x, y, z)
         waterfile = "H2O.xyz"
-        self.H2Oq = np.loadtxt(fname = waterfile, skiprows = 1, dtype = np.float64)
+        self.H2Oq = np.loadtxt(fname = waterfile, skiprows = 1, dtype = np.float64) * toBohr
         # check that the loaded file takes the correct shape
         if self.H2Oq.shape == (3, 3):
             print("The initial loaded positions have the correct shape")
@@ -68,11 +72,15 @@ class WaterSystem():
 
         # load positions of atoms in C60
         c60file = "C60.xyz"
-        C60q = np.loadtxt(fname = c60file, dtype = np.float64)
+        C60q = np.loadtxt(fname = c60file, dtype = np.float64) * toBohr
 
         """ initialize system variables """
         self.T = T # K
-        self.dt = dt * 1e-15 # fs -> s
+        self.dt_fs = dt 
+        self.dt = dt * toTime # fs -> A.U.
+        print("timestep in ps:", self.dt_fs)
+        print("timestep in a.u.:", self.dt)
+        
         self.beta = 1/(T * kB)
 
     def waterGeo(self, qs, plot = False):
@@ -100,7 +108,6 @@ class WaterSystem():
 
         # define plane of water molecule
         molPlane = np.cross(qsBFF[:, 1, :], qsBFF[:, 2, :])
-        print("molPlane init shape:", molPlane.shape)
         molPlane = molPlane/(np.linalg.norm(molPlane, axis = 1).reshape(P, 1))
 
         # define normalized vectors pointing from oxygen to hydrogen
@@ -276,13 +283,16 @@ class WaterSystem():
             # plot the bond forces 
             f1 = np.sign(HBF1_mag[0])
             f2 = np.sign(HBF2_mag[0])
-            h1hbf_plt = np.vstack([qs[0, 1, :], qs[0, 1, :] + f1 * vOH1[0] ])
-            h2hbf_plt = np.vstack([qs[0, 2, :], qs[0, 2, :] + f2 * vOH2[0] ])
+            h1hbf_plt = np.vstack([qs[0, 1, :], qs[0, 1, :] + f1 * vOH1[0]])
+            h2hbf_plt = np.vstack([qs[0, 2, :], qs[0, 2, :] + f2 * vOH2[0]])
         
             # plot angle forces
-            h1haf_plt = np.vstack([qs[0, 1, :], qs[0, 1, :] + np.sign(angleF[0]) * vOH1p[0] ])
-            h2haf_plt = np.vstack([qs[0, 2, :], qs[0, 2, :] + np.sign(angleF[0]) * vOH2p[0] ])
-            ohaf_plt = np.vstack([qs[0, 0, :], qs[0, 0, :] - np.sign(angleF[0]) * (vOH2p[0] + vOH1p[0])])
+            h1haf_plt = np.vstack([qs[0, 1, :], 
+                                   qs[0, 1, :] + np.sign(angleF[0]) * vOH1p[0]])
+            h2haf_plt = np.vstack([qs[0, 2, :], 
+                                   qs[0, 2, :] + np.sign(angleF[0]) * vOH2p[0]])
+            ohaf_plt = np.vstack([qs[0, 0, :], 
+                                  qs[0, 0, :]-np.sign(angleF[0])*(vOH2p[0]+vOH1p[0])])
             print("np.sign(angleF[0]):", np.sign(angleF[0]))
             print("vOH1p[0]:", vOH1p[0])
 
@@ -351,7 +361,9 @@ class WaterSystem():
             plt.close()
 
         # convert to Å/s
-        v = v * 1e10
+        v = v
+        # v = np.random.normal(size = shape) * 1e12
+
         return v
 
     def energyEst(self):
@@ -366,7 +378,8 @@ class WhitePILE(WaterSystem):
     def __init__(self, T, dt, gamma, P, nSteps, force = "forces", 
                  folder = "data", integrator = "wPILE"):
         super().__init__(T, dt)
-        self.gamma = gamma
+        self.gamma_inv_s = gamma 
+        self.gamma = gamma #* 2.418e-17 # convert gamma from s^-1 to  A.U^-1
         self.P = P
         self.folder = folder
         self.nSteps = int(nSteps)
@@ -378,11 +391,11 @@ class WhitePILE(WaterSystem):
         
         omega_n = 1/(self.beta_n * self.h_bar)
         self.omegas = np.zeros(P)
-        self.omegas[0] = gamma * 0.5
+        self.omegas[0] = self.gamma * 0.5
         self.omegas[1:] = 2*omega_n * np.sin(np.arange(1, P)*np.pi/P) # eqn 20
 
         self.gammas = np.zeros(P) # eqn 36
-        self.gammas[0] = gamma
+        self.gammas[0] = self.gamma
         self.gammas[1:] = 2 * self.omegas[1:]
 
         # generate propagation matrix
@@ -390,18 +403,7 @@ class WhitePILE(WaterSystem):
         self.prop = np.zeros((self.P, 2, 2))
         
         for k in range(self.P): # populate the matrix
-            ## directly what is in paper -- includes mass for momentum:
-            # for i in range(N):
-                # omega = omegas[k]
-                # omegaDt = omegasDt[k]
-                # m = ms[i]
-                # propagator[k, i, 0, 0] = np.cos(omegaDt)
-                # propagator[k, i, 0, 1] = -m*omega*np.sin(omegaDt)
-                
-                # propagator[k, i, 1, 0] = 1/(m*omega)*np.sin(omegaDt)
-                # propagator[k, i, 1, 1] = np.cos(omegaDt)
-
-            # Chris Ing: calculates velocity (desired):
+            # calculate velocity and positions (desired):
             self.prop[k, 0, 0] = np.cos(omegasDt[k])
             self.prop[k, 0, 1] = -self.omegas[k]*np.sin(omegasDt[k])
             
@@ -414,7 +416,7 @@ class WhitePILE(WaterSystem):
             
             Input:
             r: float
-                Radius of the ring in Å
+                Radius of the ring in r_bohr
             
             Output:
             ring: nd.array
@@ -425,8 +427,9 @@ class WhitePILE(WaterSystem):
             angles = np.linspace(0, 2 * np.pi, self.P)
             ring = np.zeros((self.P, 1, 3), dtype = np.float64)
 
-            ring[:, 0, 0] = np.sin(angles) * r * 1e-10
-            ring[:, 0, 1] = np.cos(angles) * r * 1e-10
+            ring[:, 0, 0] = np.sin(angles) * r
+            ring[:, 0, 1] = np.cos(angles) * r
+            ring[:, 0, 2] = np.tan(angles) * r
 
             if plot:
                 plt.scatter(ring[:, 0], ring[:, 1])
@@ -506,7 +509,7 @@ class WhitePILE(WaterSystem):
         
         # calculate coefficients and random number
         c1 = np.exp(-self.dt * 0.5* gammas)
-        c2 = (1 - c1**2)**0.5
+        c2 = np.sqrt(1 - c1*c1)
         # reshape for appropriate multiplication with aP
         c1 = c1.reshape(self.P, 1, 1)
         c2 = c2.reshape(self.P, 1, 1)
@@ -516,17 +519,19 @@ class WhitePILE(WaterSystem):
         masses = np.zeros((3, 3))
         masses[:] = self.ms
 
-        aP_nm = c1*aP_nm + (masses.T /self.beta_n)**0.5 *c2*zeta
+        aP_nm = c1*aP_nm + np.sqrt(1/(self.beta_n*masses.T)) *c2*zeta
 
         # transform back to bead representation
         aP = self.toBead(aP_nm)
 
         return aP
 
-    def wPropagate(self, v, q, verbose = False):
+    def wPropagate(self, v, q, verbose = False, fixCentroid = True):
         """ Propagates the normal mode form of the trajectory at a given set of 
             velocities and positions. Prop is the propagator defined in 
-            WhitePILE's __init__ function (shape (P, 2, 2))."""
+            WhitePILE's __init__ function (shape (P, 2, 2)). This applies the 
+            thermostat in the bead representation instead of the normal mode
+            representation"""
 
         if verbose:
             print("initial q", q)
@@ -539,10 +544,10 @@ class WhitePILE(WaterSystem):
         v = self.addNoise(v) # equations 27-29 (but vel)
 
         if verbose:
-            print("post-noise v 1:", v)
+            print("post-noise v:", v)
 
-        F = self.force(q) * 1e3 # convert from kJ to J
-        v += 1e10 * F/self.ms * self.dt * 0.5 # v0.5, eqn 21; convert from m to Å
+        F = self.force(q) # convert from kN to N
+        v += F/self.ms * self.dt * 0.5 # v0.5, eqn 21
         if verbose:
             print("change in velocity 0.5dt1:", v)
 
@@ -550,9 +555,14 @@ class WhitePILE(WaterSystem):
         q = self.toNormalMode(q)
         v = self.toNormalMode(v)
 
+        if fixCentroid:
+            init_k_iter = 1
+        else:
+            init_k_iter = 0
+
         # eqn 23: propagate both velocities and positions
         # not the most efficient -- but iterate over array slices for now
-        for k in range(self.P): # iterate over vibrational modes
+        for k in range(init_k_iter, self.P): # iterate over vibrational modes
             for i in range(self.ms.size): # iterate over the number of molecules
                 for dim in range(3):
                     out = np.matmul(self.prop[k], 
@@ -565,11 +575,11 @@ class WhitePILE(WaterSystem):
         q = self.toBead(q1)
 
         if verbose: 
-            print("post-prop v: \n", v)
+            print("post-prop q: \n", q)
 
         # eqn 25: integrate trajectory
-        F = self.force(q*1e10) * 1e3 # convert from kJ to J
-        v += 1e10 * F/self.ms * self.dt * 0.5 # v0.5, eqn 21
+        F = self.force(q)
+        v += F/self.ms * self.dt * 0.5 # v0.5, eqn 21
 
         if verbose: 
             print("change in velocity 0.5dt2: \n", v)
@@ -582,9 +592,9 @@ class WhitePILE(WaterSystem):
             print("post-noise q: \n", q)
 
         return v, q
-
+    
     # set up Langevin integrator
-    def genTrajectory(self, verbose = False):
+    def genTrajectory(self, verbose = False, genRing = False, testFFT = False):
         """ Function to generate a trajectory using the path integral langevin 
             equation (PILE) integrator defined by Ceriotti et al. (2010); 
             https://doi.org/10.1063/1.3489925
@@ -600,9 +610,9 @@ class WhitePILE(WaterSystem):
         trajName = genFileName(self.P, self.T, self.folder, 
                                integrator = self.integrator)
         
-        simLen = self.dt * self.nSteps * 1e-3 # fs -> ps
+        simLen = self.dt_fs * self.nSteps * 1e-3 # fs -> ps
 
-        checkSimExists(trajName, self.gamma, simLen, self.dt)
+        checkSimExists(trajName, self.gamma_inv_s, simLen, self.dt_fs)
         
         # initialize variables for propagation and noise
         dims = (self.nSteps, self.P, self.ms.size, 3)
@@ -611,12 +621,14 @@ class WhitePILE(WaterSystem):
         qs = np.zeros(dims, dtype = np.float64)
         vs = np.zeros(dims, dtype = np.float64)
 
+        qs[0] = np.broadcast_to(self.H2Oq, (self.P, self.ms.size, 3))
+        vs[0] = self.velBoltzDistrib(self.ms, (self.P, self.ms.size, 3))
+        
         # establish a ring shape to adjust particle positions so they do not start
         # in the same spots
-        ring = self.generateRing(r = 5) # radius = 5 angstroms
-
-        qs[0] = np.broadcast_to(self.H2Oq, (self.P, self.ms.size, 3)) + ring
-        vs[0] = self.velBoltzDistrib(self.ms, (self.P, self.ms.size, 3))
+        if genRing:
+            ring = self.generateRing(r = 5) # radius = 5 angstroms
+            qs[0] += ring
 
         # show initial conditions
         if verbose:
@@ -629,19 +641,25 @@ class WhitePILE(WaterSystem):
             l0 = l - 1
             vs[l], qs[l] = self.wPropagate(vs[l0], qs[l0])
 
+        # aside: check that the transformation between bead and nm rep. is 
+        # functional
+        if testFFT:
+            from tests import nmTransform
+            nmTransform(self.toNormalMode, self.toBead, vs[-1], qs[-1])
+            
         # save the trajectory
         datDict = {"velocities": vs,
-                "coordinates": qs} # save output in Å/s and Å
+                   "coordinates": qs} # save output in bohr/time (a.u.) and bohr
         
-        save(trajName, self.gammas[0], simLen, self.dt, data = datDict)
+        save(trajName, self.gamma_inv_s, simLen, self.dt_fs, data = datDict)
 
 
 if __name__ == "__main__":
     print("Generating simulation object:")
     T = 200
-    gamma = 1/T
-    wpile = WhitePILE(T = T, dt = 1.0, gamma = gamma, P = 8, nSteps = 2, 
-                      force="forces", folder = "data", integrator = "wPILE")
+    gamma = 1/(T)
+    wpile = WhitePILE(T = T, dt = 1.0, gamma = gamma, P = 128, nSteps = 1e4, 
+                      force="nullForces", folder = "data", integrator = "wPILE")
     
     print("Generating trajectory:")
     wpile.genTrajectory()

@@ -39,6 +39,7 @@ def save(f, gamma0, L, dt, data = {}, overwrite = False):
 
     grpName = genGroupName(dt, gamma0, L)
     grp = h5f.create_group(grpName)
+    print("The simulation will save under the following group name: ", grpName)
 
     # save all information provided for group in separate datasets
     for key in data:

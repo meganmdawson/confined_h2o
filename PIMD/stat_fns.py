@@ -18,6 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 import file_manager
+import matplotlib.animation as animation
 
 # object containing the data from the input system file ({r}C{P}_{T}.dat)
 class trajectory:
@@ -84,7 +85,7 @@ class trajectory:
         self.beads = beads
         self.temperature = temperature
         self.stepsize = stepsize
-        self.tau = 1/(temperature * beads) # NOTE: I need to review why we don't mult by k_B
+        self.tau = 1/(temperature * beads)
         self.gamma = gamma
         self.period = period
         self.tot_steps = int(np.floor(self.period*1000/self.stepsize))
@@ -123,7 +124,6 @@ class trajectory:
         skip = self.skipSteps
 
         folder_name = file_manager.genFileName(beads, T)
-        print("folder name is:", folder_name)
         
         return folder_name
         
@@ -1291,23 +1291,34 @@ class trajectory:
             Therefore, the beads of each atom will be aggregated and 
             the norm of each coordinate will be plotted instead. The result 
             in each """
-        self.unpackH5(attributes = ["coordinates"])
+        
+        try:
+            obj_exists = type(self.coordinates_h5) == h5py._hl.dataset.Dataset
+        except AttributeError:
+            obj_exists = False
+        
+        if not obj_exists:
+            self.unpackH5(attributes = ["coordinates"])
 
         fig, axes = plt.subplots(3, 1) # create a subplot per atom
 
         # nsteps, P, N, 3 -> flatten over the final index (atom)
-        countsOx, binsOx = np.histogram(self.coordinates_h5[:, :, 1, 0], bins = 31, density = True)
-        countsOy, binsOy = np.histogram(self.coordinates_h5[:, :, 1, 1], bins = 31, density = True)
-        countsOz, binsOz = np.histogram(self.coordinates_h5[:, :, 1, 2], bins = 31, density = True)
+        countsHx, binsHx = np.histogram(self.coordinates_h5[2000:, 0, 1, 0], bins = 251, density = True)
+        countsHy, binsHy = np.histogram(self.coordinates_h5[2000:, 0, 1, 1], bins = 251, density = True)
+        countsHz, binsHz = np.histogram(self.coordinates_h5[2000:, 0, 1, 2], bins = 251, density = True)
         
-        axes[0].stairs(countsOx, binsOx)
-        axes[0].set_title("$O_{x}$")
+        axes[0].stairs(countsHx, binsHx)
+        axes[0].set_title("$H_{1_x}$")
 
-        axes[1].stairs(countsOy, binsOy)
-        axes[1].set_title("$O_{y}$")
+        axes[1].stairs(countsHy, binsHy)
+        axes[1].set_title("$H_{1_y}$")
 
-        axes[2].stairs(countsOz, binsOz)
-        axes[2].set_title("$O_{z}$")
+        axes[2].stairs(countsHz, binsHz)
+        axes[2].set_title("$H_{1_z}$")
+
+        plt.suptitle("Position distribution")
+
+        plt.tight_layout()
 
         plt.show()
 
@@ -1322,27 +1333,164 @@ class trajectory:
             Therefore, the beads of each atom will be aggregated and 
             the norm of each coordinate will be plotted instead. The result 
             in each """
-        self.unpackH5(attributes = ["velocities"])
+        try:
+            obj_exists = type(self.velocities_h5) == h5py._hl.dataset.Dataset
+        except AttributeError:
+            obj_exists = False
+        
+        if not obj_exists:
+            self.unpackH5(attributes = ["velocities"])
 
         fig, axes = plt.subplots(3, 1) # create a subplot per atom
 
         # nsteps, P, N, 3 -> flatten over the final index (atom)
-        countsOx, binsOx = np.histogram(self.velocities_h5[:, :, 1, 0], bins = 31, density = True)
-        countsOy, binsOy = np.histogram(self.velocities_h5[:, :, 1, 1], bins = 31, density = True)
-        countsOz, binsOz = np.histogram(self.velocities_h5[:, :, 1, 2], bins = 31, density = True)
+        countsOx, binsOx = np.histogram(self.velocities_h5[7000, :, 1, 0], bins = 25)#, density = True)
+        countsOy, binsOy = np.histogram(self.velocities_h5[7000, :, 1, 1], bins = 25)#, density = True)
+        countsOz, binsOz = np.histogram(self.velocities_h5[7000, :, 1, 2], bins = 25)#, density = True)
         
         axes[0].stairs(countsOx, binsOx)
-        axes[0].set_title("$O_{x}$")
+        axes[0].set_title("$H_{1_x}$")
 
         axes[1].stairs(countsOy, binsOy)
-        axes[1].set_title("$O_{y}$")
+        axes[1].set_title("$H_{1_y}$")
 
         axes[2].stairs(countsOz, binsOz)
-        axes[2].set_title("$O_{z}$")
+        axes[2].set_title("$H_{1_z}$")
+
+        plt.suptitle("Velocity distribution")
+
+        plt.tight_layout()
 
         plt.show()
 
         plt.close()
+
+    def q_hist_anim_fixed_ax(self):
+        """ This function creates an animation of position histograms that 
+            updates with each timestep. The bins are recomputed for every step
+            in the trajectory to capture the shape of the distribution."""
+        
+        try:
+            obj_exists = type(self.coordinates_h5) == h5py._hl.dataset.Dataset
+        except AttributeError:
+            obj_exists = False
+        
+        if not obj_exists:
+            self.unpackH5(attributes = ["coordinates"])
+
+        fig, ax = plt.subplots()
+
+        pltData = self.coordinates_h5[:, :, 1, 0] - self.coordinates_h5[0,:,1,0]
+        histBins = np.linspace(np.min(pltData), np.max(pltData), 501)
+
+        n, _ = np.histogram(pltData[0], histBins)#, density = True)
+        _, _, bar_container = ax.hist(pltData[0], histBins, lw = 1, ec ="green", 
+                                      fc = "yellow", alpha = 0.5)
+        ax.set_ylim(top=70)
+
+        def init():
+            ax.set_ylabel("Probability")
+            ax.set_xlabel("Position (Å)")
+        
+        def prepare_animation(bar_container):
+            def animate(num):
+                n, _ = np.histogram(pltData[num], histBins)#, density = True)
+                for count, rect in zip(n, bar_container.patches):
+                    rect.set_height(count)
+                return bar_container.patches
+            return animate
+        
+        ani = animation.FuncAnimation(fig, prepare_animation(bar_container),
+                                      int(1e4), repeat=False, blit=True, 
+                                      interval=1)
+
+        plt.show()
+        plt.close()
+
+    def q_hist_anim_shift_ax(self):
+        """ This function creates an animation of position histograms that 
+            updates with each timestep """
+        
+        try:
+            obj_exists = type(self.coordinates_h5) == h5py._hl.dataset.Dataset
+        except AttributeError:
+            obj_exists = False
+        
+        if not obj_exists:
+            self.unpackH5(attributes = ["coordinates"])
+
+        fig, ax = plt.subplots()
+
+        # pltData = self.coordinates_h5[:, :, 1, 0] - self.coordinates_h5[0,:,1,0]
+        start = 0#int(2e3)
+        cap = int(self.steps) #int(1e4)
+
+        pltData = np.zeros((cap - start, self.beads))
+        pltData[:, :-1] = self.coordinates_h5[start:cap, :-1, 0, 0] - self.coordinates_h5[start:cap,1:,0,0]
+        pltData[:, -1] = self.coordinates_h5[start:cap, -1, 0, 0] - self.coordinates_h5[start:cap,0,0,0]
+
+        counts, bins = np.histogram(pltData[0], 15, density = True)
+        hist = plt.stairs(counts, bins)
+
+        def updateHist(num):
+            plt.cla()
+            ax.set_ylabel("Probability")
+            ax.set_xlabel("Position (Å)")
+            counts, bins = np.histogram(pltData[num], 15, density = True)
+            hist = plt.stairs(counts, bins, fill = True)
+            return hist
+        
+        ani = animation.FuncAnimation(fig, updateHist, int(1e4), repeat=False, 
+                                      interval=2)
+
+        plt.show()
+        plt.close()
+
+    def q_net_beadshift(self):
+            """ This function creates an animation of position histograms that 
+                updates with each timestep """
+            
+            try:
+                obj_exists = type(self.coordinates_h5) == h5py._hl.dataset.Dataset
+            except AttributeError:
+                obj_exists = False
+            
+            if not obj_exists:
+                self.unpackH5(attributes = ["coordinates"])
+
+            fig, ax = plt.subplots()
+
+            start = int(1e3)#int(2e3)
+            cap = int(self.steps) #int(1e4)
+
+            # timesteps, beads, atom, dimension
+            pltData = np.zeros((cap - start, self.beads)) # L, P, N, d
+            pltData[:, :-1] = self.coordinates_h5[start:cap, 1:, 0, 0] - \
+                              self.coordinates_h5[start:cap, :-1, 0, 0]
+            pltData[:, -1] = self.coordinates_h5[start:cap, 0, 0, 0] - \
+                             self.coordinates_h5[start:cap, -1, 0, 0]
+            counts, bins = np.histogram(pltData, 500, density = False)#, range = (-7e-7, 7e-7))
+            counts = counts/np.max(counts)
+            plt.xlabel("$x_{i+1} - x_{i} (r_{Bohr})$")
+            plt.stairs(counts, bins, label = "RPMD")
+            # plt.xlim(right = 1)
+            # plt.xlim(left = -1)
+        
+            # plot exact results adjacent to the MD results
+            xs = np.linspace(-2, 2, 500)
+            m = 15.99943 * 1822.89 # Da to m_e
+            hbar = 1 # Hartree/time
+            kB = 3.166811563e-6
+            tau = self.tau/ kB * self.beads * 0.5# Hartree
+            # exact = lambda x: np.exp(-m/(2*hbar**2 * tau)* x**2)
+            inv_lambda_th_sq = m/(2*np.pi*hbar**2 * tau)
+            exact = lambda x: np.exp(-0.5 * inv_lambda_th_sq * x**2)
+            ys = exact(xs)
+            plt.plot(xs, ys, label = "Exact")
+
+            plt.legend()
+            plt.show()
+            plt.close()
 
 # CURRENT:
 # beads, temperature, stepsize, period = 0, gamma = 1, 
@@ -1355,13 +1503,15 @@ class trajectory:
 # sim1.autocorrelation()
 # sim1.plotPotentialEnergy(add_to_sheet=True)
 
-print("creating trajectory:")
-sim1 = trajectory(beads = 8, temperature = 25, stepsize = 1e-15, period = 1e-13,
-                  gamma = 1/25)
+print("opening trajectory:")
+sim1 = trajectory(beads = 128, temperature = 200, stepsize = 1.0, period = 10.0,
+                  gamma = 1/200)
 
 # beads, temperature, stepsize, period = 0, gamma = 1, 
 #                  skipSteps = 1, filename_format = None, constraints = True,
 #                  constraintTol = None, c60 = False, pill = False,
 #                  waterType = "tip4p", version = None
-sim1.positionHistogram()
-sim1.velocityHistogram()
+# sim1.positionHistogram()
+# sim1.velocityHistogram()
+sim1.q_net_beadshift()
+# sim1.q_hist_anim_shift_ax()
