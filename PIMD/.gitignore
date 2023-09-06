@@ -5,3 +5,4 @@ forces.png
 force_comparison.jpg
 .DS_Store
 .vscode
+MMTK_PINormalModeIntegrator.pyx

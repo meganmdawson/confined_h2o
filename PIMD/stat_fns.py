@@ -1446,12 +1446,12 @@ class trajectory:
         plt.show()
         plt.close()
 
-    def q_net_beadshift(self):
+    def q_net_beadshift(self, loop = True):
             """ This function creates an animation of position histograms that 
                 updates with each timestep """
             
             try:
-                obj_exists = type(self.coordinates_h5) == h5py._hl.dataset.Dataset
+                obj_exists = type(self.coordinates_h5)==h5py._hl.dataset.Dataset
             except AttributeError:
                 obj_exists = False
             
@@ -1465,11 +1465,17 @@ class trajectory:
 
             # timesteps, beads, atom, dimension
             pltData = np.zeros((cap - start, self.beads)) # L, P, N, d
-            pltData[:, :-1] = self.coordinates_h5[start:cap, 1:, 0, 0] - \
-                              self.coordinates_h5[start:cap, :-1, 0, 0]
-            pltData[:, -1] = self.coordinates_h5[start:cap, 0, 0, 0] - \
-                             self.coordinates_h5[start:cap, -1, 0, 0]
-            counts, bins = np.histogram(pltData, 500, density = False)#, range = (-7e-7, 7e-7))
+            if loop:
+                for i in range(self.beads):
+                    pltData[:, i] = self.coordinates_h5[start:cap, i, 0, 0] - \
+                                    self.coordinates_h5[start:cap, i-1, 0, 0]
+            else:
+                pltData[:, :-1] = self.coordinates_h5[start:cap, 1:, 0, 0] - \
+                                self.coordinates_h5[start:cap, :-1, 0, 0]
+                pltData[:, -1] = self.coordinates_h5[start:cap, 0, 0, 0] - \
+                                self.coordinates_h5[start:cap, -1, 0, 0]
+                
+            counts, bins = np.histogram(pltData, 100, density = False)#, range = (-7e-7, 7e-7))
             counts = counts/np.max(counts)
             plt.xlabel("$x_{i+1} - x_{i} (r_{Bohr})$")
             plt.stairs(counts, bins, label = "RPMD")
@@ -1481,12 +1487,41 @@ class trajectory:
             m = 15.99943 * 1822.89 # Da to m_e
             hbar = 1 # Hartree/time
             kB = 3.166811563e-6
-            tau = self.tau/ kB * self.beads * 0.5# Hartree
+            tau = self.tau/ kB # * 0.5*self.beads # Hartree
             # exact = lambda x: np.exp(-m/(2*hbar**2 * tau)* x**2)
             inv_lambda_th_sq = m/(2*np.pi*hbar**2 * tau)
             exact = lambda x: np.exp(-0.5 * inv_lambda_th_sq * x**2)
             ys = exact(xs)
             plt.plot(xs, ys, label = "Exact")
+
+            plt.legend()
+            plt.show()
+            plt.close()
+
+    def q_net_centroidshift(self):
+            """ This function creates an animation of position histograms that 
+                updates with each timestep """
+            
+            try:
+                obj_exists = type(self.coordinates_h5) == h5py._hl.dataset.Dataset
+            except AttributeError:
+                obj_exists = False
+            
+            if not obj_exists:
+                self.unpackH5(attributes = ["coordinates"])
+
+            start = 0#int(2e3)
+            cap = int(self.steps) #int(1e4)
+
+            # timesteps, beads, atom, dimension
+            pltData = np.average(self.coordinates_h5[start:cap, :, 0, 0], axis = 1)
+            print("Check dimensions of plot data:", pltData.shape)
+            counts, bins = np.histogram(pltData, 10, density = False)#, range = (-7e-7, 7e-7))
+            counts = counts/np.max(counts)
+            plt.xlabel("Centroid position $(r_{Bohr})$")
+            plt.stairs(counts, bins, label = "RPMD")
+            # plt.xlim(right = 1)
+            # plt.xlim(left = -1)
 
             plt.legend()
             plt.show()
@@ -1505,7 +1540,7 @@ class trajectory:
 
 print("opening trajectory:")
 sim1 = trajectory(beads = 128, temperature = 200, stepsize = 1.0, period = 10.0,
-                  gamma = 1/200)
+                  gamma = 0.0001)
 
 # beads, temperature, stepsize, period = 0, gamma = 1, 
 #                  skipSteps = 1, filename_format = None, constraints = True,
@@ -1514,4 +1549,5 @@ sim1 = trajectory(beads = 128, temperature = 200, stepsize = 1.0, period = 10.0,
 # sim1.positionHistogram()
 # sim1.velocityHistogram()
 sim1.q_net_beadshift()
+sim1.q_net_centroidshift()
 # sim1.q_hist_anim_shift_ax()

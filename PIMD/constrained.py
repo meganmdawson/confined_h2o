@@ -12,7 +12,7 @@ class WaterSystem():
         DaToMe = 1822.89 # Da to electron mass (me/Da)
         toHartree = 1.5936254980079682e-3 # convert kcal/mol to hartree
         toBohr = 1.8903591682419658 # convert to bohr (bohr/Å)
-        toTime = 41.35649296939619 # fs to A.U. time (A.U.t/fs)
+        toTime = 41.35649296939619 # fs to A.U. time (A.U/fs)
 
         self.h_bar = 1 # atomic units
 
@@ -375,7 +375,7 @@ class WaterSystem():
 """ define integrators and functions to run simulations: """
 class WhitePILE(WaterSystem):
 
-    def __init__(self, T, dt, gamma, P, nSteps, force = "forces", 
+    def __init__(self, T, dt, gamma, P, nSteps, force = "nullForces", 
                  folder = "data", integrator = "wPILE"):
         super().__init__(T, dt)
         self.gamma_inv_s = gamma 
@@ -411,8 +411,8 @@ class WhitePILE(WaterSystem):
             self.prop[k, 1, 1] = np.cos(omegasDt[k])
 
     def generateRing(self, r = 5, plot = False):
-            """ Generate a ring shape that the replicas can be positioned in. The output
-                ring lies in the XY plane.
+            """ Generate a ring shape that the replicas can be positioned in. 
+                The output ring lies in the XY plane.
             
             Input:
             r: float
@@ -526,7 +526,7 @@ class WhitePILE(WaterSystem):
 
         return aP
 
-    def wPropagate(self, v, q, verbose = False, fixCentroid = True):
+    def wPropagate(self, v, q, verbose = False, fixCentroid = False):
         """ Propagates the normal mode form of the trajectory at a given set of 
             velocities and positions. Prop is the propagator defined in 
             WhitePILE's __init__ function (shape (P, 2, 2)). This applies the 
@@ -546,7 +546,7 @@ class WhitePILE(WaterSystem):
         if verbose:
             print("post-noise v:", v)
 
-        F = self.force(q) # convert from kN to N
+        F = self.force(q)
         v += F/self.ms * self.dt * 0.5 # v0.5, eqn 21
         if verbose:
             print("change in velocity 0.5dt1:", v)
@@ -555,10 +555,17 @@ class WhitePILE(WaterSystem):
         q = self.toNormalMode(q)
         v = self.toNormalMode(v)
 
-        if fixCentroid:
+        if fixCentroid: 
             init_k_iter = 1
+
+            # # Adjust the centroid position based on the init vel. NOTE: the 
+            # # name fixCentroid is no longer true if following lines are present
+            # v1[0, :, :] = v[0, :, :] # maintain initial velocity
+            # for dim in range(3):
+            #     q1[0, :, dim] = self.dt * v[0, :, dim] + q[0, :, dim]
         else:
             init_k_iter = 0
+            
 
         # eqn 23: propagate both velocities and positions
         # not the most efficient -- but iterate over array slices for now
@@ -657,7 +664,7 @@ class WhitePILE(WaterSystem):
 if __name__ == "__main__":
     print("Generating simulation object:")
     T = 200
-    gamma = 1/(T)
+    gamma = 1/(10000)
     wpile = WhitePILE(T = T, dt = 1.0, gamma = gamma, P = 128, nSteps = 1e4, 
                       force="nullForces", folder = "data", integrator = "wPILE")
     
